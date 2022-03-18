@@ -22,12 +22,13 @@
 
 #include <utility>
 
+#include "modules/prediction/proto/prediction_obstacle.pb.h"
+
 #include "cyber/common/log.h"
 #include "modules/common/configs/vehicle_config_helper.h"
 #include "modules/common/math/path_matcher.h"
 #include "modules/common/math/vec2d.h"
 #include "modules/planning/common/planning_gflags.h"
-#include "modules/prediction/proto/prediction_obstacle.pb.h"
 
 namespace apollo {
 namespace planning {
@@ -46,6 +47,7 @@ CollisionChecker::CollisionChecker(
     const std::shared_ptr<PathTimeGraph>& ptr_path_time_graph) {
   ptr_reference_line_info_ = ptr_reference_line_info;
   ptr_path_time_graph_ = ptr_path_time_graph;
+  // NOTE:(hongyf) 筛选需要判断的障碍物，只有在当前时刻的 t = 0;
   BuildPredictedEnvironment(obstacles, ego_vehicle_s, ego_vehicle_d,
                             discretized_reference_line);
 }
@@ -94,16 +96,20 @@ bool CollisionChecker::InCollision(
   for (size_t i = 0; i < discretized_trajectory.NumOfPoints(); ++i) {
     const auto& trajectory_point =
         discretized_trajectory.TrajectoryPointAt(static_cast<std::uint32_t>(i));
+    // NOTE:(hongyf) 对每个点进行循环检测
+    // QUESTION:(hongyf) 为什么要用继承vector的方式？
     double ego_theta = trajectory_point.path_point().theta();
     Box2d ego_box(
         {trajectory_point.path_point().x(), trajectory_point.path_point().y()},
         ego_theta, ego_length, ego_width);
+    // NOTE:(hongyf) AABB box2d
     double shift_distance =
         ego_length / 2.0 - vehicle_config.vehicle_param().back_edge_to_center();
+    // NOTE:(hongyf) 后轴到几何中心的偏差
     Vec2d shift_vec{shift_distance * std::cos(ego_theta),
                     shift_distance * std::sin(ego_theta)};
     ego_box.Shift(shift_vec);
-
+    // QUESTION:(hongyf) 重复算了一遍
     for (const auto& obstacle_box : predicted_bounding_rectangles_[i]) {
       if (ego_box.HasOverlap(obstacle_box)) {
         return true;
@@ -121,12 +127,15 @@ void CollisionChecker::BuildPredictedEnvironment(
 
   // If the ego vehicle is in lane,
   // then, ignore all obstacles from the same lane.
+  // TODO:(hongyf)这边的obstacles应该指的是指 which behind ego vehicle 吧？
   bool ego_vehicle_in_lane = IsEgoVehicleInLane(ego_vehicle_s, ego_vehicle_d);
   std::vector<const Obstacle*> obstacles_considered;
   for (const Obstacle* obstacle : obstacles) {
     if (obstacle->IsVirtual()) {
       continue;
     }
+    // NOTE:(hongyf) 去除部分obstacle： 1. 虚拟的。 2. 后面的。 3.
+    // 超出范围（ST图）
     if (ego_vehicle_in_lane &&
         (IsObstacleBehindEgoVehicle(obstacle, ego_vehicle_s,
                                     discretized_reference_line) ||
@@ -158,16 +167,21 @@ bool CollisionChecker::IsEgoVehicleInLane(const double ego_vehicle_s,
                                           const double ego_vehicle_d) {
   double left_width = FLAGS_default_reference_line_width * 0.5;
   double right_width = FLAGS_default_reference_line_width * 0.5;
+  // default_reference_line_width = 4 m
   ptr_reference_line_info_->reference_line().GetLaneWidth(
       ego_vehicle_s, &left_width, &right_width);
+  // TODO:(hongyf) 待理解，应该是s点前后的一个平均宽度。
+
   return ego_vehicle_d < left_width && ego_vehicle_d > -right_width;
 }
 
 bool CollisionChecker::IsObstacleBehindEgoVehicle(
+    // NOTE:(hongyf) 在ego所在的line上并且 matched point 在 ego的后面
     const Obstacle* obstacle, const double ego_vehicle_s,
     const std::vector<PathPoint>& discretized_reference_line) {
   double half_lane_width = FLAGS_default_reference_line_width * 0.5;
   TrajectoryPoint point = obstacle->GetPointAtTime(0.0);
+  // QUESTION:(hongyf)只有当前0时刻的点？
   auto obstacle_reference_line_position = PathMatcher::GetPathFrenetCoordinate(
       discretized_reference_line, point.path_point().x(),
       point.path_point().y());

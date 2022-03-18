@@ -61,6 +61,7 @@ DiscretizedTrajectory TrajectoryCombiner::Combine(
     double relative_s = s - s0;
     // linear extrapolation is handled internally in LatticeTrajectory1d;
     // no worry about s_param > lat_trajectory.ParamLength() situation
+    // TODO:(hongyf) review extrapolations (lat and lon trajectories)
     double d = lat_trajectory.Evaluate(0, relative_s);
     double d_prime = lat_trajectory.Evaluate(1, relative_s);
     double d_pprime = lat_trajectory.Evaluate(2, relative_s);
@@ -73,7 +74,6 @@ DiscretizedTrajectory TrajectoryCombiner::Combine(
     double kappa = 0.0;
     double v = 0.0;
     double a = 0.0;
-
     const double rs = matched_ref_point.s();
     const double rx = matched_ref_point.x();
     const double ry = matched_ref_point.y();

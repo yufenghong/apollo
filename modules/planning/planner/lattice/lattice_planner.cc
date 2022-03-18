@@ -181,8 +181,7 @@ Status LatticePlanner::PlanOnReferenceLine(
            << "Current ego s: " << init_s[0];
   }
 
-  ADEBUG << "Decision_Time = "
-         << (Clock::NowInSeconds() - current_time) * 1000;
+  ADEBUG << "Decision_Time = " << (Clock::NowInSeconds() - current_time) * 1000;
   current_time = Clock::NowInSeconds();
 
   // 5. generate 1d trajectory bundle for longitudinal and lateral respectively.
@@ -204,7 +203,7 @@ Status LatticePlanner::PlanOnReferenceLine(
   TrajectoryEvaluator trajectory_evaluator(
       init_s, planning_target, lon_trajectory1d_bundle, lat_trajectory1d_bundle,
       ptr_path_time_graph, ptr_reference_line);
-
+  // NOTE:(hongyf)根据一些简单指标，过滤掉一部分轨迹
   ADEBUG << "Trajectory_Evaluator_Construction_Time = "
          << (Clock::NowInSeconds() - current_time) * 1000;
   current_time = Clock::NowInSeconds();
@@ -235,6 +234,7 @@ Status LatticePlanner::PlanOnReferenceLine(
   size_t num_lattice_traj = 0;
 
   while (trajectory_evaluator.has_more_trajectory_pairs()) {
+    // NOTE:(hongyf)trajectory_evaluator中的cost优先队列不为空
     double trajectory_pair_cost =
         trajectory_evaluator.top_trajectory_pair_cost();
     auto trajectory_pair = trajectory_evaluator.next_top_trajectory_pair();
@@ -247,9 +247,10 @@ Status LatticePlanner::PlanOnReferenceLine(
     // check longitudinal and lateral acceleration
     // considering trajectory curvatures
     auto result = ConstraintChecker::ValidTrajectory(combined_trajectory);
+    // TODO:(hongyf) 待细看 ValidTrajectory
     if (result != ConstraintChecker::Result::VALID) {
       ++combined_constraint_failure_count;
-
+      // QUESTION:(hongyf) 这些count有什么用？待解决
       switch (result) {
         case ConstraintChecker::Result::LON_VELOCITY_OUT_OF_BOUND:
           lon_vel_failure_count += 1;

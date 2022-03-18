@@ -38,6 +38,9 @@ bool ConstraintChecker1d::IsValidLongitudinalTrajectory(
     const Curve1d& lon_trajectory) {
   double t = 0.0;
   while (t < lon_trajectory.ParamLength()) {
+    // lon_trajectory.ParamLength() ： bundle 的配置 T
+    // 如：在构建QuarticPolynomialCurve1d时的param
+    // 对每个间隔时刻判断 v a j 有没有在限制之内
     double v = lon_trajectory.Evaluate(1, t);  // evaluate_v
     if (!fuzzy_within(v, FLAGS_speed_lower_bound, FLAGS_speed_upper_bound)) {
       return false;

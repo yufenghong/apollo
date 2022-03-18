@@ -55,6 +55,8 @@ TrajectoryEvaluator::TrajectoryEvaluator(
   const double end_time = FLAGS_trajectory_time_length;
   path_time_intervals_ = path_time_graph_->GetPathBlockingIntervals(
       start_time, end_time, FLAGS_trajectory_time_resolution);
+  // NOTE:(hongyf) path_time_intervals_ 理解为所有障碍物的 ST
+  // 图四边形的上下两条边线性插值出来的vector
 
   reference_s_dot_ = ComputeLongitudinalGuideVelocity(planning_target);
 
@@ -66,11 +68,13 @@ TrajectoryEvaluator::TrajectoryEvaluator(
   }
   for (const auto& lon_trajectory : lon_trajectories) {
     double lon_end_s = lon_trajectory->Evaluate(0, end_time);
+    // 调用 QuarticPolynomialCurve1d::Evaluate 求 s-t 图中　end_time 对应的ｓ
     if (init_s[0] < stop_point &&
         lon_end_s + FLAGS_lattice_stop_buffer > stop_point) {
       continue;
     }
-
+    // lattice_stop_buffer = 0.02  过滤 ：终点超过stop_point
+    // 每一个时刻的速度加速度有没有在限制范围之内
     if (!ConstraintChecker1d::IsValidLongitudinalTrajectory(*lon_trajectory)) {
       continue;
     }
@@ -125,17 +129,19 @@ double TrajectoryEvaluator::Evaluate(
   // Longitudinal costs
   double lon_objective_cost =
       LonObjectiveCost(lon_trajectory, planning_target, reference_s_dot_);
-
+  // 1. 与理想速度规划的差
   double lon_jerk_cost = LonComfortCost(lon_trajectory);
-
+  // 2. 碰撞风险
   double lon_collision_cost = LonCollisionCost(lon_trajectory);
-
+  // 3. 向心加速度
   double centripetal_acc_cost = CentripetalAccelerationCost(lon_trajectory);
 
   // decides the longitudinal evaluation horizon for lateral trajectories.
   double evaluation_horizon =
       std::min(FLAGS_speed_lon_decision_horizon,
                lon_trajectory->Evaluate(0, lon_trajectory->ParamLength()));
+  // FLAGS_speed_lon_decision_horizon = 200 m ,  最长 T 对应的 ｓ
+  // s 间隔 1
   std::vector<double> s_values;
   for (double s = 0.0; s < evaluation_horizon;
        s += FLAGS_trajectory_space_resolution) {
@@ -222,7 +228,7 @@ double TrajectoryEvaluator::LonObjectiveCost(
   double t_max = lon_trajectory->ParamLength();
   double dist_s =
       lon_trajectory->Evaluate(0, t_max) - lon_trajectory->Evaluate(0, 0.0);
-
+  //计算 t 及 s range
   double speed_cost_sqr_sum = 0.0;
   double speed_cost_weight_sum = 0.0;
   for (size_t i = 0; i < ref_s_dots.size(); ++i) {
@@ -246,20 +252,28 @@ double TrajectoryEvaluator::LonCollisionCost(
   double cost_sqr_sum = 0.0;
   double cost_abs_sum = 0.0;
   for (size_t i = 0; i < path_time_intervals_.size(); ++i) {
+    // path_time_intervals_[i]  t = i * FLAGS_trajectory_time_resolution
     const auto& pt_interval = path_time_intervals_[i];
     if (pt_interval.empty()) {
+      // 没有 obstacles
       continue;
     }
     double t = static_cast<double>(i) * FLAGS_trajectory_time_resolution;
     double traj_s = lon_trajectory->Evaluate(0, t);
     double sigma = FLAGS_lon_collision_cost_std;
+    // lon_collision_cost_std = 0.5
     for (const auto& m : pt_interval) {
+      // 每个 obstacle  m : pair<double, double>
       double dist = 0.0;
+      // FLAGS_lon_collision_yield_buffer = 1
+      // FLAGS_lon_collision_overtake_buffer = 5
+      // intervals.emplace_back(s_lower, s_upper)  : first -> lower
       if (traj_s < m.first - FLAGS_lon_collision_yield_buffer) {
         dist = m.first - FLAGS_lon_collision_yield_buffer - traj_s;
       } else if (traj_s > m.second + FLAGS_lon_collision_overtake_buffer) {
         dist = traj_s - m.second - FLAGS_lon_collision_overtake_buffer;
       }
+      // 如果在前面 5 m 或者在后面 1 m ，计算当前 t 时刻的距离 dist(t)
       double cost = std::exp(-dist * dist / (2.0 * sigma * sigma));
 
       cost_sqr_sum += cost * cost;
@@ -274,11 +288,13 @@ double TrajectoryEvaluator::CentripetalAccelerationCost(
   // Assumes the vehicle is not obviously deviate from the reference line.
   double centripetal_acc_sum = 0.0;
   double centripetal_acc_sqr_sum = 0.0;
+  // Ｑ ：为什么用 8s 而不是用生成bundle的时间？
   for (double t = 0.0; t < FLAGS_trajectory_time_length;
        t += FLAGS_trajectory_time_resolution) {
     double s = lon_trajectory->Evaluate(0, t);
     double v = lon_trajectory->Evaluate(1, t);
     PathPoint ref_point = PathMatcher::MatchToPath(*reference_line_, s);
+    // PathMatcher::MatchToPath 只操作的类！ 找到match point
     ACHECK(ref_point.has_kappa());
     double centripetal_acc = v * v * ref_point.kappa();
     centripetal_acc_sum += std::fabs(centripetal_acc);
