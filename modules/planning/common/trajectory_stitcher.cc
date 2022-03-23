@@ -249,7 +249,7 @@ std::pair<double, double> TrajectoryStitcher::ComputePositionProjection(
     const double x, const double y, const TrajectoryPoint& p) {
   Vec2d v(x - p.path_point().x(), y - p.path_point().y());
   Vec2d n(std::cos(p.path_point().theta()), std::sin(p.path_point().theta()));
-
+  // QUESTION:(hongyf) 不应该是 (-sin, cos)才是指向左边的单位法向量吗？
   std::pair<double, double> frenet_sd;
   frenet_sd.first = v.InnerProd(n) + p.path_point().s();
   frenet_sd.second = v.CrossProd(n);

@@ -110,11 +110,13 @@ bool CollisionChecker::InCollision(
                     shift_distance * std::sin(ego_theta)};
     ego_box.Shift(shift_vec);
     // QUESTION:(hongyf) 重复算了一遍
+    // NOTE:(hongyf) 自此，AABB box2d 构建完成
     for (const auto& obstacle_box : predicted_bounding_rectangles_[i]) {
       if (ego_box.HasOverlap(obstacle_box)) {
         return true;
       }
     }
+    // NOTE:(hongyf) X, Y 方向的重叠情况，true有重叠。
   }
   return false;
 }

@@ -234,7 +234,7 @@ Status LatticePlanner::PlanOnReferenceLine(
   size_t num_lattice_traj = 0;
 
   while (trajectory_evaluator.has_more_trajectory_pairs()) {
-    // NOTE:(hongyf)trajectory_evaluator中的cost优先队列不为空
+    // NOTE:(hongyf)trajectory_evaluator中的cost优先队列不为空循环各条轨迹
     double trajectory_pair_cost =
         trajectory_evaluator.top_trajectory_pair_cost();
     auto trajectory_pair = trajectory_evaluator.next_top_trajectory_pair();
@@ -357,6 +357,7 @@ Status LatticePlanner::PlanOnReferenceLine(
   } else {
     AERROR << "Planning failed";
     if (FLAGS_enable_backup_trajectory) {
+      // TODO:(hongyf) 待看
       AERROR << "Use backup trajectory";
       BackupTrajectoryGenerator backup_trajectory_generator(
           init_s, init_d, planning_init_point.relative_time(),

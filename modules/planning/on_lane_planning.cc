@@ -21,11 +21,17 @@
 #include <list>
 #include <utility>
 
+#include "gtest/gtest_prod.h"
+
 #include "absl/strings/str_cat.h"
+
+#include "modules/planning/proto/planning_internal.pb.h"
+#include "modules/planning/proto/planning_semantic_map_config.pb.h"
+#include "modules/routing/proto/routing.pb.h"
+
 #include "cyber/common/file.h"
 #include "cyber/common/log.h"
 #include "cyber/time/clock.h"
-#include "gtest/gtest_prod.h"
 #include "modules/common/math/quaternion.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/map/hdmap/hdmap_util.h"
@@ -37,33 +43,30 @@
 #include "modules/planning/common/util/util.h"
 #include "modules/planning/learning_based/img_feature_renderer/birdview_img_feature_renderer.h"
 #include "modules/planning/planner/rtk/rtk_replay_planner.h"
-#include "modules/planning/proto/planning_internal.pb.h"
-#include "modules/planning/proto/planning_semantic_map_config.pb.h"
 #include "modules/planning/reference_line/reference_line_provider.h"
 #include "modules/planning/tasks/task_factory.h"
 #include "modules/planning/traffic_rules/traffic_decider.h"
-#include "modules/routing/proto/routing.pb.h"
 
 namespace apollo {
 namespace planning {
 using apollo::canbus::Chassis;
 using apollo::common::EngageAdvice;
 using apollo::common::ErrorCode;
+using apollo::common::PointENU;
 using apollo::common::Status;
 using apollo::common::TrajectoryPoint;
 using apollo::common::VehicleState;
 using apollo::common::VehicleStateProvider;
+using apollo::common::math::Polygon2d;
 using apollo::common::math::Vec2d;
 using apollo::cyber::Clock;
 using apollo::dreamview::Chart;
 using apollo::hdmap::HDMapUtil;
+using apollo::hdmap::JunctionInfoConstPtr;
 using apollo::planning_internal::SLFrameDebug;
 using apollo::planning_internal::SpeedPlan;
 using apollo::planning_internal::STGraphDebug;
 using apollo::routing::RoutingRequest;
-using apollo::hdmap::JunctionInfoConstPtr;
-using apollo::common::math::Polygon2d;
-using apollo::common::PointENU;
 
 OnLanePlanning::~OnLanePlanning() {
   if (reference_line_provider_) {
@@ -87,9 +90,9 @@ Status OnLanePlanning::Init(const PlanningConfig& config) {
   }
 
   PlanningBase::Init(config_);
-
+  // NOTE:(hongyf) 工厂初始化
   planner_dispatcher_->Init();
-
+  // NOTE:(hongyf)注册各种规划器
   ACHECK(apollo::cyber::common::GetProtoFromFile(
       FLAGS_traffic_rule_config_filename, &traffic_rule_configs_))
       << "Failed to load traffic rule config file "
@@ -206,8 +209,7 @@ void OnLanePlanning::GenerateStopTrajectory(ADCTrajectory* ptr_trajectory_pb) {
 }
 
 bool OnLanePlanning::JudgeCarInDeadEndJunction(
-    std::vector<JunctionInfoConstPtr>* junctions,
-    const Vec2d& car_position,
+    std::vector<JunctionInfoConstPtr>* junctions, const Vec2d& car_position,
     JunctionInfoConstPtr* target_junction) {
   // warning: the car only be the one junction
   size_t junction_num = junctions->size();
@@ -231,9 +233,8 @@ bool OnLanePlanning::JudgeCarInDeadEndJunction(
   return true;
 }
 
-bool OnLanePlanning::DeadEndHandle(
-  const PointENU& dead_end_point,
-  const VehicleState& vehicle_state) {
+bool OnLanePlanning::DeadEndHandle(const PointENU& dead_end_point,
+                                   const VehicleState& vehicle_state) {
   const hdmap::HDMap* base_map_ptr = hdmap::HDMapUtil::BaseMapPtr();
   std::vector<JunctionInfoConstPtr> junctions;
   JunctionInfoConstPtr junction;
@@ -278,20 +279,27 @@ void OnLanePlanning::RunOnce(const LocalView& local_view,
 
   VehicleState vehicle_state = injector_->vehicle_state()->vehicle_state();
   size_t waypoint_num =
-    local_view_.routing->routing_request().waypoint().size();
-  if (local_view_.routing->routing_request().dead_end_info().
-    dead_end_routing_type() == routing::ROUTING_IN) {
+      local_view_.routing->routing_request().waypoint().size();
+  //-------------------------------------------
+  // TODO:(hongyf_important) waiting for figure out this case.
+  if (local_view_.routing->routing_request()
+          .dead_end_info()
+          .dead_end_routing_type() == routing::ROUTING_IN) {
     dead_end_point_ = local_view_.routing->routing_request()
-                    .waypoint().at(waypoint_num - 1).pose();
-  } else if (local_view_.routing->routing_request().dead_end_info().
-    dead_end_routing_type() == routing::ROUTING_OUT) {
-    dead_end_point_ = local_view_.routing->routing_request()
-                    .waypoint().at(0).pose();
+                          .waypoint()
+                          .at(waypoint_num - 1)
+                          .pose();
+  } else if (local_view_.routing->routing_request()
+                 .dead_end_info()
+                 .dead_end_routing_type() == routing::ROUTING_OUT) {
+    dead_end_point_ =
+        local_view_.routing->routing_request().waypoint().at(0).pose();
   }
   if (DeadEndHandle(dead_end_point_, vehicle_state) && !wait_flag_) {
     // do not use reference line
     reference_line_provider_->Wait();
   }
+  //-------------------------------------------------
   const double vehicle_state_timestamp = vehicle_state.timestamp();
   DCHECK_GE(start_timestamp, vehicle_state_timestamp)
       << "start_timestamp is behind vehicle_state_timestamp by "
@@ -349,9 +357,11 @@ void OnLanePlanning::RunOnce(const LocalView& local_view,
 
   // planning is triggered by prediction data, but we can still use an estimated
   // cycle time for stitching
+  // TODO:(hongyf)
+  // 规划是由预测信息触发的，但仍可以用预测的周期进行拼接，如何理解？
   const double planning_cycle_time =
       1.0 / static_cast<double>(FLAGS_planning_loop_rate);
-
+  // NOTE:(hongyf) planning_loop_rate = 10
   std::string replan_reason;
   std::vector<TrajectoryPoint> stitching_trajectory =
       TrajectoryStitcher::ComputeStitchingTrajectory(

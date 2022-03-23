@@ -21,8 +21,8 @@
 #include <utility>
 
 #include "absl/strings/str_cat.h"
-#include "cyber/common/log.h"
 
+#include "cyber/common/log.h"
 #include "modules/common/math/math_utils.h"
 #include "modules/common/math/polygon2d.h"
 
@@ -280,7 +280,7 @@ bool Box2d::HasOverlap(const Box2d &box) const {
       box.min_y() > max_y()) {
     return false;
   }
-
+  // NOTE:(hongyf) 基础的无碰撞剔除。
   const double shift_x = box.center_x() - center_.x();
   const double shift_y = box.center_y() - center_.y();
 
@@ -292,7 +292,8 @@ bool Box2d::HasOverlap(const Box2d &box) const {
   const double dy3 = box.sin_heading() * box.half_length();
   const double dx4 = box.sin_heading() * box.half_width();
   const double dy4 = -box.cos_heading() * box.half_width();
-
+  // NOTE:(hongyf) 分离轴定理：ego 横纵轴，obs 横纵轴。
+  // NOTE:(hongyf) theory : https://zhuanlan.zhihu.com/p/99761177
   return std::abs(shift_x * cos_heading_ + shift_y * sin_heading_) <=
              std::abs(dx3 * cos_heading_ + dy3 * sin_heading_) +
                  std::abs(dx4 * cos_heading_ + dy4 * sin_heading_) +
