@@ -232,7 +232,7 @@ Status LatticePlanner::PlanOnReferenceLine(
   size_t lat_jerk_failure_count = 0;
 
   size_t num_lattice_traj = 0;
-
+ 
   while (trajectory_evaluator.has_more_trajectory_pairs()) {
     // NOTE:(hongyf)trajectory_evaluator中的cost优先队列不为空循环各条轨迹
     double trajectory_pair_cost =
